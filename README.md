@@ -503,8 +503,8 @@ Execute o Script no Console {F12}
       document.getElementById('modal-response').innerText = `Status: ${res.status}\n\nResponse:\n${data}`;
     } catch(err) { document.getElementById('modal-response').innerText = `Falha: ${err.message}`; }
   });
-  ```
   
 
   setTimeout(() => { if (window.lucide) lucide.createIcons(); }, 800);
 })();
+  ```
