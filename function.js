@@ -4,6 +4,11 @@
     document.getElementById('nunesxyz-devtools-container').remove();
   }
 
+  // Remove overlay anterior se houver esquecido
+  if (document.getElementById('nunesxyz-inspect-overlay')) {
+    document.getElementById('nunesxyz-inspect-overlay').remove();
+  }
+
   // Carrega os ícones do Lucide via CDN caso não existam
   if (!window.lucide) {
     const scriptLucide = document.createElement('script');
@@ -75,12 +80,21 @@
       <div id="tab-elements" class="tab-content">
         <div class="actions-bar">
           <button id="btn-toggle-inspect" class="btn-primary"><i data-lucide="mouse-pointer"></i> Inspecionar Elemento</button>
+          <button id="btn-save-element" class="btn-primary hidden"><i data-lucide="save"></i> Salvar Elemento</button>
+          <button id="btn-copy-saved-elements" class="btn-primary"><i data-lucide="copy"></i> Copiar Selecionados</button>
+          <button id="btn-clear-saved-elements" class="btn-danger"><i data-lucide="trash-2"></i> Limpar</button>
         </div>
-        <div id="elements-tree-container">
-          <div class="elements-instructions">Clique no botão acima e selecione um elemento na página real para editar o HTML.</div>
-          <div id="html-editor-wrapper" class="hidden">
-            <label>Editor HTML Visual (Atualização contínua e corrigida):</label>
-            <textarea id="html-live-editor" rows="10"></textarea>
+        <div class="elements-instructions hint-text">💡 Dica: No modo mira, dê <b>Botão Direito</b> ou segure <b>Shift + Clique</b> para ignorar elementos da frente e ver os de trás!</div>
+        <div id="elements-split">
+          <div id="elements-left">
+            <div id="html-editor-wrapper" class="hidden">
+              <label>Editor HTML Visual:</label>
+              <textarea id="html-live-editor" rows="12"></textarea>
+            </div>
+          </div>
+          <div id="elements-right">
+            <h4>Elementos Salvos</h4>
+            <div id="saved-elements-list"></div>
           </div>
         </div>
       </div>
@@ -117,17 +131,34 @@
   `;
   document.body.appendChild(container);
 
+  // Cria o elemento de overlay azul para o highlight
+  const overlay = document.createElement('div');
+  overlay.id = 'nunesxyz-inspect-overlay';
+  document.body.appendChild(overlay);
+
   // 2. ESTILIZAÇÃO DO PAINEL E DOS FILTROS (CSS)
   const style = document.createElement('style');
   style.textContent = `
     #nunesxyz-devtools-container { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; position: fixed; z-index: 9999999; bottom: 15px; right: 15px; direction: ltr; text-align: left; }
     
+    /* Overlay Azul de Inspeção */
+    #nunesxyz-inspect-overlay {
+      position: fixed;
+      background: rgba(0, 112, 243, 0.25);
+      border: 2px dashed #0070f3;
+      pointer-events: none;
+      z-index: 9999998;
+      display: none;
+      transition: all 0.05s ease-out;
+      box-sizing: border-box;
+    }
+
     .theme-dark #nunesxyz-toggle { background: #000000; color: #ffffff; border: 1px solid #333; }
     .theme-light #nunesxyz-toggle { background: #ffffff; color: #000000; border: 1px solid #ccc; }
     #nunesxyz-toggle { padding: 10px 18px; border-radius: 20px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3); font-weight: bold; font-size: 13px; display: flex; align-items: center; gap: 8px; font-family: inherit; }
     #nunesxyz-toggle svg { width: 14px; height: 14px; }
 
-    #nunesxyz-panel { width: 650px; height: 480px; min-width: 400px; min-height: 300px; position: fixed; bottom: 70px; right: 15px; border-radius: 8px; box-shadow: 0 10px 35px rgba(0,0,0,0.6); display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
+    #nunesxyz-panel { width: 750px; height: 480px; min-width: 400px; min-height: 300px; position: fixed; bottom: 70px; right: 15px; border-radius: 8px; box-shadow: 0 10px 35px rgba(0,0,0,0.6); display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
     
     .theme-dark #nunesxyz-panel { background: #000000; color: #ffffff; border: 1px solid #222; }
     .theme-light #nunesxyz-panel { background: #ffffff; color: #000000; border: 1px solid #ccc; }
@@ -153,6 +184,24 @@
     .tab-content { display: none; flex: 1; overflow-y: auto; padding: 12px; box-sizing: border-box; }
     .tab-content.active-content { display: flex; flex-direction: column; }
     
+    /* Layout split para Elements */
+    #elements-split { display: flex; flex: 1; gap: 12px; overflow: hidden; margin-top: 5px; }
+    #elements-left { flex: 1; display: flex; flex-direction: column; }
+    #elements-right { width: 45%; border-left: 1px solid #222; padding-left: 10px; display: flex; flex-direction: column; overflow-y: auto; }
+    .theme-light #elements-right { border-left: 1px solid #ccc; }
+    #elements-right h4 { margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; color: #888; }
+    #saved-elements-list { flex: 1; overflow-y: auto; }
+
+    .saved-element-item { border: 1px solid #1c1c1c; padding: 6px; margin-bottom: 4px; border-radius: 4px; background: #030303; display: flex; align-items: center; gap: 8px; }
+    .theme-light .saved-element-item { border: 1px solid #eee; background: #fdfdfd; }
+    .saved-element-tag { background: #331166; color: #cc99ff; padding: 2px 5px; border-radius: 3px; font-weight: bold; font-size: 9px; text-transform: uppercase; }
+    .theme-light .saved-element-tag { background: #f0e6ff; color: #6600cc; }
+    .saved-element-preview { flex: 1; font-size: 10px; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aaa; }
+    .theme-light .saved-element-preview { color: #555; }
+
+    .hint-text { font-size: 11px; color: #00ff66; opacity: 0.8; margin-bottom: 8px; }
+    .theme-light .hint-text { color: #0070f3; }
+
     /* Grid de Filtros */
     .filter-bar { display: flex; gap: 6px; margin-bottom: 10px; }
     .filter-bar input, .filter-bar select { background: #0a0a0a; color: #fff; border: 1px solid #222; padding: 6px; border-radius: 4px; font-family: inherit; font-size: 11px; outline: none; }
@@ -162,7 +211,7 @@
     #filter-exclude { flex: 1; border-color: #441111; }
     .theme-light #filter-exclude { border-color: #ffcccc; }
 
-    .actions-bar { display: flex; gap: 8px; margin-bottom: 8px; }
+    .actions-bar { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
     .actions-bar button { font-family: inherit; font-size: 11px; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: bold; }
     .actions-bar button svg { width: 12px; height: 12px; }
     .btn-primary { background: #222; color: #00ff66; border: 1px solid #333 !important; }
@@ -196,7 +245,6 @@
     .net-buttons button { background: #111; color: #aaa; border: 1px solid #222; padding: 3px 6px; cursor: pointer; border-radius: 3px; font-size: 10px; }
     .theme-light .net-buttons button { background: #f0f0f0; color: #333; border: 1px solid #ccc; }
 
-    .elements-instructions { font-size: 11px; color: #aa66ff; margin-bottom: 8px; }
     #html-editor-wrapper { display: flex; flex-direction: column; gap: 4px; flex: 1; }
     #html-live-editor { width: 100%; background: #020202; color: #00ff66; border: 1px solid #222; border-radius: 4px; font-family: monospace; padding: 6px; box-sizing: border-box; font-size: 11px; resize: none; }
     .theme-light #html-live-editor { background: #f9f9f9; color: #b11010; border: 1px solid #ccc; }
@@ -222,8 +270,10 @@
 
   // 3. LOGICA OPERACIONAL E VARIAVEIS GLOBAIS
   window.nunesxyzRequests = [];
+  window.nunesxyzSavedElements = []; 
   let isInspecting = false;
-  let currentTargetId = null; // ID único para travar o elemento inspecionado
+  let currentTargetId = null; 
+  let ignoredElementsList = []; // Rastreia elementos ignorados temporariamente para resetar depois
 
   document.getElementById('nunesxyz-toggle').addEventListener('click', () => {
     document.getElementById('nunesxyz-panel').classList.toggle('hidden');
@@ -297,7 +347,7 @@
 
   document.addEventListener('mouseup', () => { isResizing = false; });
 
-  // 6. NETWORK FILTROS E MECHANICS (CORRIGIDO)
+  // 6. NETWORK FILTROS E MECHANICS
   function renderNetworkList() {
     const listContainer = document.getElementById('network-list');
     if (!listContainer) return;
@@ -307,14 +357,11 @@
     const searchFilter = document.getElementById('filter-search').value.toLowerCase();
     const excludeFilter = document.getElementById('filter-exclude').value.toLowerCase();
 
-    // Quebra as palavras de exclusão por vírgula
     const excludedTerms = excludeFilter.split(',').map(term => term.trim()).filter(term => term !== '');
 
     window.nunesxyzRequests.forEach(req => {
       const matchMethod = (methodFilter === 'ALL' || req.method === methodFilter);
       const matchSearch = req.url.toLowerCase().includes(searchFilter);
-      
-      // Validação de termos banidos
       const containsExcluded = excludedTerms.some(term => req.url.toLowerCase().includes(term));
 
       if (matchMethod && matchSearch && !containsExcluded) {
@@ -336,7 +383,6 @@
     });
   }
 
-  // Eventos de digitação nos filtros
   document.getElementById('filter-method').addEventListener('change', renderNetworkList);
   document.getElementById('filter-search').addEventListener('input', renderNetworkList);
   document.getElementById('filter-exclude').addEventListener('input', renderNetworkList);
@@ -401,36 +447,100 @@
     return res;
   };
 
-  // 7. INSPETOR DE ELEMENTOS CORRIGIDO (PERSISTÊNCIA ABSOLUTA)
+  // 7. INSPETOR DE ELEMENTOS COM HOVER HIGHLIGHT (CAIXA AZUL) E IGNORAR ELEMENTOS
   const inspectBtn = document.getElementById('btn-toggle-inspect');
+  const saveElementBtn = document.getElementById('btn-save-element');
+  const inspectOverlay = document.getElementById('nunesxyz-inspect-overlay');
+
   inspectBtn.addEventListener('click', () => {
     isInspecting = !isInspecting;
     inspectBtn.style.color = isInspecting ? '#ff9900' : '';
     inspectBtn.innerHTML = isInspecting ? '<i data-lucide="scan"></i> Mirando...' : '<i data-lucide="mouse-pointer"></i> Inspecionar Elemento';
+    
+    if (!isInspecting) {
+      inspectOverlay.style.display = 'none';
+      resetIgnoredElements(); // Se sair da inspeção, devolve os cliques aos ignorados
+    }
     if(window.lucide) lucide.createIcons();
   });
 
+  // Restaura os cliques dos elementos que foram ignorados durante a mira
+  function resetIgnoredElements() {
+    ignoredElementsList.forEach(el => {
+      if (el) el.style.pointerEvents = '';
+    });
+    ignoredElementsList = [];
+  }
+
+  // Efeito Caixa Azul no mousemove
+  document.addEventListener('mousemove', function(e) {
+    if (!isInspecting) return;
+    
+    // Ignora elementos internos do nosso próprio painel
+    if (document.getElementById('nunesxyz-devtools-container').contains(e.target)) {
+      inspectOverlay.style.display = 'none';
+      return;
+    }
+
+    const target = e.target;
+    if (target) {
+      const rect = target.getBoundingClientRect();
+      inspectOverlay.style.width = `${rect.width}px`;
+      inspectOverlay.style.height = `${rect.height}px`;
+      inspectOverlay.style.top = `${rect.top}px`;
+      inspectOverlay.style.left = `${rect.left}px`;
+      inspectOverlay.style.display = 'block';
+    }
+  }, true);
+
+  // Monitora cliques (Esquerdo seleciona / Direito ou Shift+Esquerdo ignora)
   document.addEventListener('click', function(e) {
-    if (document.getElementById('nunesxyz-devtools-container').contains(e.target) || !isInspecting) return;
+    if (!isInspecting) return;
+    if (document.getElementById('nunesxyz-devtools-container').contains(e.target)) return;
+
     e.preventDefault(); e.stopPropagation();
 
-    // Limpa alvo anterior se houver
+    // MECÂNICA DE IGNORAR: Se segurar Shift ou for clique com botão direito
+    if (e.shiftKey || e.button === 2) {
+      const targetToIgnore = e.target;
+      targetToIgnore.style.pointerEvents = 'none'; // Desativa cliques nele
+      ignoredElementsList.push(targetToIgnore);    // Salva para restaurar depois
+      inspectOverlay.style.display = 'none';       // Esconde caixa azul pra atualizar no próximo frame
+      return;
+    }
+
+    // SELEÇÃO NORMAL (Clique Esquerdo padrão)
     document.querySelectorAll('[data-nunes-target]').forEach(el => el.removeAttribute('data-nunes-target'));
 
-    // Cria amarra persistente no elemento selecionado usando ID único temporal
     currentTargetId = 'el_' + Date.now();
     e.target.setAttribute('data-nunes-target', currentTargetId);
 
     isInspecting = false;
+    inspectOverlay.style.display = 'none';
+    resetIgnoredElements(); // Restaura cliques dos pulados
+
     inspectBtn.style.color = '';
     inspectBtn.innerHTML = '<i data-lucide="mouse-pointer"></i> Inspecionar Elemento';
     if(window.lucide) lucide.createIcons();
 
     document.getElementById('html-editor-wrapper').classList.remove('hidden');
+    saveElementBtn.classList.remove('hidden');
     document.getElementById('html-live-editor').value = e.target.outerHTML;
   }, true);
 
-  // Manipulador contínuo corrigido: não perde a referência ao apagar strings/letras
+  // Permite escutar botão direito (contextmenu) para ignorar sem abrir menu do navegador
+  document.addEventListener('contextmenu', function(e) {
+    if (!isInspecting) return;
+    if (document.getElementById('nunesxyz-devtools-container').contains(e.target)) return;
+    
+    e.preventDefault(); e.stopPropagation();
+    
+    const targetToIgnore = e.target;
+    targetToIgnore.style.pointerEvents = 'none';
+    ignoredElementsList.push(targetToIgnore);
+    inspectOverlay.style.display = 'none';
+  }, true);
+
   document.getElementById('html-live-editor').addEventListener('input', (e) => {
     if (!currentTargetId) return;
     const realElement = document.querySelector(`[data-nunes-target="${currentTargetId}"]`);
@@ -442,12 +552,58 @@
         const newStructure = parser.firstElementChild;
         
         if (newStructure) {
-          // Mantém a chave de rastreamento no novo elemento injetado
           newStructure.setAttribute('data-nunes-target', currentTargetId);
           realElement.replaceWith(newStructure);
         }
       } catch(err) {}
     }
+  });
+
+  function renderSavedElements() {
+    const listContainer = document.getElementById('saved-elements-list');
+    if (!listContainer) return;
+    listContainer.innerHTML = '';
+
+    window.nunesxyzSavedElements.forEach(el => {
+      const matchTag = el.html.match(/^<([a-z1-6]+)/i);
+      const tagName = matchTag ? matchTag[1] : 'elem';
+      const cleanPreview = el.html.replace(/\s+/g, ' ').substring(0, 50) + '...';
+
+      const item = document.createElement('div');
+      item.className = 'saved-element-item';
+      item.innerHTML = `
+        <input type="checkbox" class="elem-checkbox" value="${el.id}">
+        <span class="saved-element-tag">${tagName}</span>
+        <span class="saved-element-preview" title="${el.html.replace(/"/g, '&quot;')}">${cleanPreview}</span>
+      `;
+      listContainer.appendChild(item);
+    });
+  }
+
+  saveElementBtn.addEventListener('click', () => {
+    const htmlContent = document.getElementById('html-live-editor').value;
+    if (!htmlContent.trim()) return alert('O editor está vazio.');
+
+    const id = 'el_saved_' + Date.now();
+    window.nunesxyzSavedElements.push({ id, html: htmlContent });
+    renderSavedElements();
+  });
+
+  document.getElementById('btn-copy-saved-elements').addEventListener('click', () => {
+    const checkboxes = document.querySelectorAll('.elem-checkbox:checked');
+    const ids = Array.from(checkboxes).map(c => c.value);
+    if (ids.length === 0) return alert('Selecione ao menos um elemento salvo da lista.');
+
+    const filtered = window.nunesxyzSavedElements.filter(el => ids.includes(el.id));
+    const textToCopy = filtered.map(el => el.html).join('\n');
+
+    navigator.clipboard.writeText(textToCopy);
+    alert(`${filtered.length} elemento(s) copiado(s)!`);
+  });
+
+  document.getElementById('btn-clear-saved-elements').addEventListener('click', () => {
+    window.nunesxyzSavedElements = [];
+    renderSavedElements();
   });
 
   // 8. CONSOLE E MODAL MECHANICS
